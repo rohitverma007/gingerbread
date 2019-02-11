@@ -7,7 +7,7 @@
       {{loadingText}}
       <b-table v-if="loadingText === ''" striped hover :fields="contractsDataFields" :items="contractsData">
         <template slot="contractData" slot-scope="data">
-          {{(parseFloat(parseFloat(data.item.contractData.balance)/1000000)).toFixed(2)}} ꜩ
+          {{tezosHelper.formatTezosNumericalData(data.item.contractData.balance)}}
         </template>
       </b-table>
     </div>
@@ -17,20 +17,24 @@
 <script>
 import { mapState } from 'vuex'
 import TezosRpc from '@/services/rpc/rpc'
+import TezosHelper from '@/services/utils/tezos'
+
 export default {
   data () {
     return {
-      currentCycle: 0,
+      currentCycle: this.$route.params.cycle,
       contractsDataFields: [
         {key: 'contractId', label: 'Delegator'},
         {key: 'contractData', label: 'Delegator Balance'}
       ],
       contractsData: [],
+      tezosHelper: new TezosHelper(),
       loadingText: 'Loading...'
     }
   },
   computed: mapState([
-    'user'
+    'user',
+    'snapshot'
   ]),
   methods: {
     compareBalance: function (a, b) {
@@ -49,13 +53,12 @@ export default {
     }
   },
   created: async function () {
-    const tezosRpc = new TezosRpc(this.user.tezos_rpc_address, this.user.baker_tz_address)
-    tezosRpc.setFirstBlockOfCurrentCycle = await tezosRpc.getFirstBlockOfCurrentCycle()
-
-    this.currentCycle = tezosRpc.getCurrentCycleFromCurrentBlock()
-
-    await tezosRpc.setSnapshotNumber()
-    const contractIdsArray = await tezosRpc.getSnapshotDelegateData()
+    await this.$store.dispatch('snapshot/loadFromDynamoDB')
+    const tezosRpc = new TezosRpc(this.user.tezos_rpc_address, this.user.baker_tz_address, this.$route.params.cycle)
+    await tezosRpc.setCycle(this.$route.params.cycle)
+    tezosRpc.setSnapshotBlockNumber(this.snapshot.data[tezosRpc.cycle])
+    this.currentCycle = tezosRpc.cycle
+    const contractIdsArray = await tezosRpc.getSnapshotDelegateContractIds()
     this.contractsData = await tezosRpc.getContractsData(contractIdsArray)
     this.contractsData.sort(this.compareBalance)
     this.loadingText = ''
